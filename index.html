@@ -6,6 +6,8 @@
 <title>정전기 헌터 ⚡ — FAB ESD 소탕전</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚡</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <style>
 :root{
   --bg:#0b0e1a; --bg2:#121631; --card:#181d3d; --card2:#1f2550;
@@ -170,7 +172,7 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
     </div>
   </div>
   <div class="hof">
-    <div class="hof-title"><span>🏆 명예의 전당 — 역대 1등</span>
+    <div class="hof-title"><span id="hofTitle">🏆 명예의 전당 — 역대 1등</span>
       <button class="hof-clear" id="hofClear" type="button">기록 지우기</button></div>
     <div id="hofList"></div>
   </div>
@@ -897,7 +899,37 @@ function onGameEnd(rank, stage){
       .forEach(r=>saveHofEntry(r.n, r.s, stage||G.stage, r.id===G.myId));
 }
 
-// ═══════════ 명예의 전당 (이 기기 localStorage) ═══════════
+// ═══════════ 명예의 전당 ═══════════
+// ── Firebase 글로벌 랭킹 (설정값이 있으면 전 세계 공용, 없으면 이 기기 기록만) ──
+// Firebase 콘솔 > 프로젝트 설정 > 웹 앱의 firebaseConfig 객체를 아래에 붙여넣으세요.
+// Realtime Database를 만들어야 하며 databaseURL이 반드시 포함되어야 합니다. (README 참고)
+const FIREBASE_CONFIG = null;
+/* 예시:
+const FIREBASE_CONFIG = {
+  apiKey: "AIza...",
+  authDomain: "esd-hunter.firebaseapp.com",
+  databaseURL: "https://esd-hunter-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "esd-hunter",
+  storageBucket: "esd-hunter.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef"
+};
+*/
+let fdb=null, globalHof=[];
+try{
+  if(FIREBASE_CONFIG && typeof firebase!=='undefined'){
+    firebase.initializeApp(FIREBASE_CONFIG);
+    fdb=firebase.database();
+    // 상위 기록 실시간 구독
+    fdb.ref('hof').orderByChild('s').limitToLast(10).on('value', snap=>{
+      const arr=[];
+      snap.forEach(ch=>{ const v=ch.val(); if(v&&typeof v.n==='string') arr.push(v); });
+      globalHof=arr.sort((a,b)=>(b.s-a.s)||(b.st-a.st)||(a.d-b.d));
+      renderHof();
+    }, ()=>{ /* 권한/네트워크 오류 시 로컬 기록으로 표시 */ fdb=null; renderHof(); });
+  }
+}catch(e){ fdb=null; }
+
 function loadHof(){
   try{
     const v=JSON.parse(localStorage.getItem('esd-hof')||'[]');
@@ -905,13 +937,18 @@ function loadHof(){
   }catch(e){ return []; }
 }
 function saveHofEntry(name,score,stage,isMe){
+  const entry={n:String(name).slice(0,8), s:+score||0, st:+stage||1, d:Date.now()};
+  // 글로벌 랭킹: 우승자 본인 기기에서만 업로드 (중복 방지)
+  if(fdb && isMe){
+    try{ fdb.ref('hof').push(entry); }catch(e){}
+  }
   let becameTop=false;
   try{
     const hof=loadHof();
     const prevTop=hof[0];
-    hof.push({n:String(name).slice(0,8), s:+score||0, st:+stage||1, d:Date.now()});
+    hof.push(entry);
     hof.sort((a,b)=>b.s-a.s || b.st-a.st || a.d-b.d);
-    becameTop = hof[0].d!==((prevTop||{}).d) && hof[0].n===String(name).slice(0,8) && hof[0].s===+score;
+    becameTop = hof[0]===entry;
     localStorage.setItem('esd-hof', JSON.stringify(hof.slice(0,10)));
   }catch(e){}
   if(becameTop && isMe) toast('🏆 신기록! 명예의 전당 1위 등극!', 3000);
@@ -919,7 +956,9 @@ function saveHofEntry(name,score,stage,isMe){
 }
 function renderHof(){
   const el=$('hofList');
-  const hof=loadHof().slice(0,5);
+  const hof=(fdb?globalHof:loadHof()).slice(0,5);
+  $('hofTitle').textContent = fdb ? '🌍 글로벌 명예의 전당 — 역대 1등' : '🏆 명예의 전당 — 역대 1등';
+  $('hofClear').style.display = fdb ? 'none' : '';
   el.innerHTML='';
   if(!hof.length){
     const d=document.createElement('div'); d.className='hint';

@@ -23,7 +23,36 @@ FAB 전공정/후공정 라인에 발생한 정전기(ESD)를 이오나이저 �
 
 - 메인 화면에 **역대 1등 기록**(닉네임 · 점수 · 도달 스테이지 · 날짜) TOP 5가 표시됩니다.
 - 매 게임이 끝나면 우승자가 자동으로 기록되고, 1위를 갈아치우면 "신기록!" 알림이 뜹니다.
-- 기록은 각 기기의 브라우저(localStorage)에 저장됩니다. "기록 지우기"로 초기화할 수 있어요.
+- 기본값은 각 기기의 브라우저(localStorage) 저장이며, 아래처럼 Firebase를 연결하면
+  **모든 플레이어가 공유하는 글로벌 랭킹**이 됩니다.
+
+### 🌍 글로벌 랭킹 설정 (Firebase, 무료)
+
+1. https://console.firebase.google.com 에서 **프로젝트 만들기** (예: `esd-hunter`, 애널리틱스는 꺼도 됨)
+2. 왼쪽 메뉴 **빌드 → Realtime Database → 데이터베이스 만들기**
+   - 위치는 가까운 곳(예: `asia-southeast1`), 보안 규칙은 일단 **잠금 모드**로 시작
+3. **규칙(Rules)** 탭에 아래 내용을 붙여넣고 게시:
+   ```json
+   {
+     "rules": {
+       "hof": {
+         ".read": true,
+         ".indexOn": ["s"],
+         "$id": {
+           ".write": "!data.exists()",
+           ".validate": "newData.hasChildren(['n','s','st','d']) && newData.child('n').isString() && newData.child('n').val().length >= 1 && newData.child('n').val().length <= 8 && newData.child('s').isNumber() && newData.child('s').val() >= 0 && newData.child('s').val() <= 9999 && newData.child('st').isNumber() && newData.child('st').val() >= 1 && newData.child('st').val() <= 99 && newData.child('d').isNumber()"
+         }
+       },
+       "$other": { ".read": false, ".write": false }
+     }
+   }
+   ```
+   (읽기는 누구나, 쓰기는 "새 기록 추가만" 허용 — 기존 기록 수정/삭제는 불가)
+4. **프로젝트 설정(⚙️) → 일반 → 내 앱 → 웹 앱(</>) 추가** 후 나오는 `firebaseConfig` 객체를 복사
+5. `index.html`에서 `const FIREBASE_CONFIG = null;` 부분을 복사한 객체로 교체
+   - `databaseURL` 항목이 반드시 포함되어야 합니다 (없으면 Realtime Database 페이지 상단의 URL을 추가)
+
+설정이 없거나 연결에 실패하면 자동으로 기기별 로컬 기록으로 동작합니다.
 
 ## 👾 스테이지 (갤러그식 단계)
 
