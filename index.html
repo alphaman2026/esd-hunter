@@ -59,6 +59,21 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
   width:100%;font-size:13px;color:var(--dim);line-height:1.9}
 .howto b{color:var(--txt)}
 
+/* ── 명예의 전당 ── */
+.hof{background:var(--card);border:1px solid rgba(251,191,36,.35);border-radius:14px;padding:14px 18px;
+  max-width:400px;width:100%}
+.hof-title{font-size:13px;font-weight:800;color:var(--warn);margin-bottom:8px;
+  display:flex;align-items:center;justify-content:space-between}
+.hof-clear{background:none;border:none;color:var(--dim);font-size:11px;font-weight:700;cursor:pointer;
+  padding:2px 6px;border-radius:6px;font-family:inherit}
+.hof-clear:hover{color:var(--bad);background:var(--bg2)}
+.hof-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;padding:4px 0;color:var(--txt)}
+.hof-row .m{width:26px;text-align:center;font-size:15px}
+.hof-row .meta{font-size:11px;color:var(--dim);font-weight:600}
+.hof-row .pt{margin-left:auto;font-weight:900;font-variant-numeric:tabular-nums}
+.hof-row.top{color:var(--warn)}
+.hof-row.top .pt{color:var(--warn);text-shadow:0 0 12px rgba(251,191,36,.5)}
+
 /* ── game screen ── */
 #gameScreen{padding:0;display:none}
 #gameScreen.show{display:block}
@@ -153,6 +168,11 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
       <input id="codeInput" maxlength="5" placeholder="방 코드" style="text-transform:uppercase;text-align:center;letter-spacing:4px;font-weight:800" autocomplete="off">
       <button class="btn ghost" id="joinBtn">🚪 참가</button>
     </div>
+  </div>
+  <div class="hof">
+    <div class="hof-title"><span>🏆 명예의 전당 — 역대 1등</span>
+      <button class="hof-clear" id="hofClear" type="button">기록 지우기</button></div>
+    <div id="hofList"></div>
   </div>
   <div class="howto">
     <b>🎮 조작법</b> — PC: 방향키/WASD + <b>Space 대시</b> · 모바일: 드래그 + ⚡버튼<br>
@@ -872,7 +892,60 @@ function onGameEnd(rank, stage){
   });
   $('againBtn').style.display=(G.isHost||G.solo)?'':'none';
   $('againHint').style.display=(G.isHost||G.solo)?'none':'';
+  // 명예의 전당 기록 (동점 우승자 모두)
+  rank.filter(r=>r.s===winner.s && r.s>0)
+      .forEach(r=>saveHofEntry(r.n, r.s, stage||G.stage, r.id===G.myId));
 }
+
+// ═══════════ 명예의 전당 (이 기기 localStorage) ═══════════
+function loadHof(){
+  try{
+    const v=JSON.parse(localStorage.getItem('esd-hof')||'[]');
+    return Array.isArray(v)?v:[];
+  }catch(e){ return []; }
+}
+function saveHofEntry(name,score,stage,isMe){
+  let becameTop=false;
+  try{
+    const hof=loadHof();
+    const prevTop=hof[0];
+    hof.push({n:String(name).slice(0,8), s:+score||0, st:+stage||1, d:Date.now()});
+    hof.sort((a,b)=>b.s-a.s || b.st-a.st || a.d-b.d);
+    becameTop = hof[0].d!==((prevTop||{}).d) && hof[0].n===String(name).slice(0,8) && hof[0].s===+score;
+    localStorage.setItem('esd-hof', JSON.stringify(hof.slice(0,10)));
+  }catch(e){}
+  if(becameTop && isMe) toast('🏆 신기록! 명예의 전당 1위 등극!', 3000);
+  renderHof();
+}
+function renderHof(){
+  const el=$('hofList');
+  const hof=loadHof().slice(0,5);
+  el.innerHTML='';
+  if(!hof.length){
+    const d=document.createElement('div'); d.className='hint';
+    d.textContent='아직 기록이 없어요 — 첫 챔피언이 되어보세요!';
+    el.appendChild(d);
+    return;
+  }
+  const medals=['🥇','🥈','🥉','4위','5위'];
+  hof.forEach((r,i)=>{
+    const row=document.createElement('div');
+    row.className='hof-row'+(i===0?' top':'');
+    const m=document.createElement('span'); m.className='m'; m.textContent=medals[i]; row.appendChild(m);
+    const nm=document.createElement('span'); nm.textContent=r.n; row.appendChild(nm);
+    const dt=new Date(r.d);
+    const meta=document.createElement('span'); meta.className='meta';
+    meta.textContent=`STAGE ${r.st} · ${dt.getMonth()+1}.${dt.getDate()}`; row.appendChild(meta);
+    const pt=document.createElement('span'); pt.className='pt'; pt.textContent=r.s+'점'; row.appendChild(pt);
+    el.appendChild(row);
+  });
+}
+$('hofClear').onclick=()=>{
+  try{ localStorage.removeItem('esd-hof'); }catch(e){}
+  renderHof();
+  toast('명예의 전당 기록을 지웠어요');
+};
+renderHof();
 
 // ═══════════ 입력 ═══════════
 const keys={};
