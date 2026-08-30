@@ -79,6 +79,12 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
   border:2px solid rgba(124,108,240,.4);display:none;z-index:6;pointer-events:none}
 #stick .knob{position:absolute;width:52px;height:52px;border-radius:50%;background:rgba(124,108,240,.55);
   left:34px;top:34px;box-shadow:0 0 18px rgba(124,108,240,.6)}
+#boostBtn{position:absolute;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));width:80px;height:80px;
+  border-radius:50%;border:2px solid rgba(124,108,240,.55);color:#fff;font-size:24px;font-weight:900;z-index:7;
+  background:conic-gradient(rgba(124,108,240,.85) calc(var(--cd,1)*1turn), rgba(124,108,240,.12) 0);
+  cursor:pointer;font-family:inherit;touch-action:none;line-height:1.1;user-select:none}
+#boostBtn.rdy{box-shadow:0 0 24px rgba(124,108,240,.85);border-color:var(--accent2)}
+#boostBtn small{display:block;font-size:10px;font-weight:800;color:#e8eaff}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--card2);
   border:1px solid var(--line);border-radius:12px;padding:10px 20px;font-size:14px;font-weight:700;
   z-index:99;opacity:0;transition:.3s;pointer-events:none;max-width:90vw;text-align:center}
@@ -149,10 +155,10 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
     </div>
   </div>
   <div class="howto">
-    <b>🎮 조작법</b> — PC: 방향키/WASD · 모바일: 화면 터치 후 드래그<br>
-    <b>⚡ 정전기</b> +1점 · <b>🌟 대전 보너스</b> +5점 · <b>🔴 ESD 서지</b>에 닿으면 −3점!<br>
-    <b>👾 스테이지</b> — 45초 안에 웨이브를 모두 제거하면 다음 단계! 갈수록 어려워져요<br>
-    <b>📝 30초마다</b> ESD 상식 퀴즈 — 맞히면 +5점 보너스
+    <b>🎮 조작법</b> — PC: 방향키/WASD + <b>Space 대시</b> · 모바일: 드래그 + ⚡버튼<br>
+    <b>⚡ 정전기</b> +1점 · <b>🌟 보너스</b> +5점 · <b>🔴 ESD 서지</b> −3점 · <b>🔥 연속 콤보</b> 추가 점수!<br>
+    <b>💥 대시 태클</b> — 대시로 상대를 들이받으면 2점 강탈! · <b>🚀🧲 파워업</b> 획득 가능<br>
+    <b>👾 스테이지</b> — 45초 안에 웨이브 전멸 시 다음 단계 · <b>📝 30초마다</b> ESD 퀴즈 +5점
   </div>
 </div>
 
@@ -180,6 +186,7 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
     <div id="board"></div>
   </div>
   <div id="stick"><div class="knob"></div></div>
+  <button id="boostBtn" type="button">⚡<small>대시</small></button>
   <div id="flash"></div>
 </div>
 
@@ -226,7 +233,12 @@ const QUIZ_INTERVAL = 30;              // 퀴즈 주기 (플레이 시간 기준
 const QUIZ_SECONDS = 10;               // 퀴즈 답변 제한 시간
 const QUIZ_BONUS = 5;                  // 퀴즈 정답 보너스
 const STAGE_BONUS = 5;                 // 스테이지 클리어 보너스 (전원)
-const PLAYER_SPEED = 270;
+const PLAYER_SPEED = 300;              // 최고 순항 속도
+const ACC = 1700, FRICTION = 4.5;      // 관성 이동 (가속/감쇠)
+const DASH_SPEED = 850, DASH_MS = 240, DASH_CD = 2000;  // 대시
+const TACKLE_STEAL = 2;                // 대시 태클로 강탈하는 점수
+const COMBO_WINDOW = 1500;             // 콤보 유지 시간(ms)
+const PU_DURATION = 5000;              // 파워업 지속(ms)
 const SPARK_VAL = 1, GOLD_VAL = 5, HIT_PENALTY = 3;
 const PEER_PREFIX = 'waferbay-esd-';
 const COLORS = ['#7c6cf0','#38bdf8','#34d399','#fbbf24','#f472b6','#fb923c','#f87171'];
@@ -300,6 +312,10 @@ const sfx = {
   hit(){ beep(140,0.25,'sawtooth',0.12); },
   start(){ beep(523,0.1,'triangle',0.09); setTimeout(()=>beep(784,0.15,'triangle',0.09),120); },
   end(){ beep(784,0.12,'triangle',0.09); setTimeout(()=>beep(1046,0.2,'triangle',0.09),140); },
+  dash(){ beep(320,0.1,'sawtooth',0.07); beep(640,0.07,'square',0.045); },
+  tackle(){ beep(120,0.22,'sawtooth',0.14); beep(85,0.3,'square',0.1); },
+  power(){ beep(880,0.08,'triangle',0.09); setTimeout(()=>beep(1174,0.09,'triangle',0.09),90); setTimeout(()=>beep(1568,0.12,'triangle',0.09),180); },
+  combo(n){ beep(700+Math.min(n,20)*35,0.1,'square',0.09); },
 };
 
 // ═══════════ 게임 상태 ═══════════
@@ -310,14 +326,16 @@ const G = {
   players:{},            // pid -> {n(이름), c(색인덱스), x, y, s(점수), inv(무적종료ms), lx,ly(보간용)}
   sparks:[],             // {id,x,y,vx,vy,type} type 0=일반 1=골드
   hazards:[],            // {x,y,a(방향)}
+  powerups:[],           // {id,x,y,k} k 0=스피드 1=자석
   particles:[],          // 이펙트
+  pops:[],               // 떠오르는 점수 팝업
   timeLeft:STAGE_SECONDS,
   stage:1,
   interludeUntil:0,      // 스테이지 배너 동안 일시정지
   quiz:null,             // 호스트: {qi, until, grace}
   quizElapsed:0,         // 다음 퀴즈까지 누적 플레이 시간
   usedQuiz:[],
-  sparkSeq:0,
+  sparkSeq:0, puSeq:0, puTimer:0,
   peer:null, conns:[], hostConn:null,
 };
 
@@ -388,7 +406,7 @@ function hostOnData(conn,d){
   }
   else if(d.t==='pos'){
     const p=G.players[conn.peer];
-    if(p){ p.x=Math.max(0,Math.min(W,+d.x||0)); p.y=Math.max(0,Math.min(H,+d.y||0)); }
+    if(p){ p.x=Math.max(0,Math.min(W,+d.x||0)); p.y=Math.max(0,Math.min(H,+d.y||0)); p.dash=!!d.d; }
   }
   else if(d.t==='quizAns'){
     // 퀴즈 정답 보너스 (마감 직후 도착도 약간의 유예 허용)
@@ -463,6 +481,12 @@ function guestOnData(d){
       break;
     case 'quiz': showQuiz(d.qi); break;
     case 'quizend': hideQuiz(); break;
+    case 'knock':{
+      // 태클 넉백: 내 로컬 속도에 충격량 적용
+      const me=G.players[G.myId];
+      if(me){ me.vx=(me.vx||0)+d.vx; me.vy=(me.vy||0)+d.vy; }
+      break;
+    }
     case 'state': applyState(d); break;
     case 'end': onGameEnd(d.rank, d.stage); break;
   }
@@ -486,22 +510,49 @@ function applyState(d){
     const old=G.hazards[i];
     return old ? {x:old.x,y:old.y,tx:h[0],ty:h[1]} : {x:h[0],y:h[1],tx:h[0],ty:h[1]};
   });
-  for(const [pid,x,y,s,inv] of d.pl){
+  if(d.pu) G.powerups=d.pu.map(u=>({id:u[0],x:u[1],y:u[2],k:u[3]}));
+  for(const [pid,x,y,s,inv,fx] of d.pl){
     const p=G.players[pid];
     if(!p) continue;
-    p.s=s; p.inv=inv;
+    p.s=s; p.inv=inv; p.fx=fx||0;
     if(pid!==G.myId){ p.tx=x; p.ty=y; }
   }
   // 이펙트 이벤트
-  if(d.ev) for(const [pid,x,y,val] of d.ev){
-    spawnBurst(x,y, val>=GOLD_VAL?'#fbbf24':'#38bdf8');
-    if(pid===G.myId){ val>=GOLD_VAL?sfx.gold():sfx.eat(); }
-  }
-  if(d.hit) for(const [pid,x,y] of d.hit){
-    spawnBurst(x,y,'#f87171');
-    if(pid===G.myId){ sfx.hit(); flashRed(); }
-  }
+  if(d.ev) for(const e of d.ev) fxEat(...e);
+  if(d.hit) for(const e of d.hit) fxHit(...e);
+  if(d.tk) for(const e of d.tk) fxTackle(...e);
+  if(d.pw) for(const e of d.pw) fxPower(...e);
   renderBoard(); updateTimer();
+}
+
+// ── 공통 이펙트 처리 (호스트/게스트/솔로 동일) ──
+function fxEat(pid,x,y,val,cb){
+  spawnBurst(x,y, val>=GOLD_VAL?'#fbbf24':'#38bdf8');
+  addPop(x,y,'+'+val, val>=GOLD_VAL?'#fbbf24':'#7ee7ff');
+  if(cb){
+    addPop(x,y-34,'🔥 COMBO ×'+cb,'#fb923c',26);
+    if(pid===G.myId) sfx.combo(cb);
+  }
+  if(pid===G.myId){ val>=GOLD_VAL?sfx.gold():sfx.eat(); }
+}
+function fxHit(pid,x,y){
+  spawnBurst(x,y,'#f87171');
+  addPop(x,y,'-'+HIT_PENALTY,'#f87171',20);
+  if(pid===G.myId){ sfx.hit(); flashRed(); shake(10); }
+}
+function fxTackle(aid,vid,x,y,st){
+  spawnBurst(x,y,'#f87171'); spawnBurst(x,y,'#fbbf24');
+  addPop(x,y,'💥 -'+st,'#f87171',22);
+  const an=(G.players[aid]||{}).n||'?', vn=(G.players[vid]||{}).n||'?';
+  if(aid===G.myId){ toast(`💥 태클 성공! ${vn}에게서 ${st}점 강탈!`,1800); sfx.tackle(); shake(6); }
+  else if(vid===G.myId){ toast(`😵 ${an}의 태클! ${st}점을 강탈당했다!`,1800); sfx.tackle(); shake(15); flashRed(); }
+}
+function fxPower(pid,x,y,k){
+  addPop(x,y, k===0?'🚀 스피드 업!':'🧲 자석!', k===0?'#34d399':'#38bdf8',20);
+  if(pid===G.myId){
+    sfx.power();
+    toast(k===0?'🚀 5초간 이동속도 증가!':'🧲 5초간 정전기를 끌어당긴다!',1600);
+  }
 }
 
 // ═══════════ 화면 전환 ═══════════
@@ -543,8 +594,10 @@ function hostStartGame(){
     const p=G.players[pid];
     p.x=W/2+Math.cos(ang)*220; p.y=H/2+Math.sin(ang)*160; p.s=0; p.inv=0;
     p.tx=p.x; p.ty=p.y;
+    p.combo=0; p.lastEat=0; p.spdUntil=0; p.magUntil=0; p.tackleInv=0; p.dash=false;
   });
   G.stage=1; G.sparkSeq=0; G.quiz=null; G.quizElapsed=0; G.usedQuiz=[];
+  G.puSeq=0;
   // 게스트에게 각자 시작 위치와 함께 시작 통보 (스테이지 배너보다 먼저)
   for(const c of G.conns){
     const p=G.players[c.peer];
@@ -562,6 +615,7 @@ function hostSetupStage(){
   const nHaz=Math.min(5, (n>4?2:1)+Math.ceil(G.stage/2));
   G.hazards=[];
   for(let i=0;i<nHaz;i++) G.hazards.push({x:150+Math.random()*(W-300), y:150+Math.random()*(H-300), a:Math.random()*Math.PI*2});
+  G.powerups=[]; G.puTimer=0;
   G.timeLeft=STAGE_SECONDS;
   G.interludeUntil=performance.now()+2200;   // 배너 표시 동안 정지
   hostBroadcast({t:'stage', n:G.stage});
@@ -579,7 +633,7 @@ function hostSpawnSpark(){
     type:Math.random()<0.08?1:0,
   });
 }
-let hostEvents=[], hostHits=[];
+let hostEvents=[], hostHits=[], hostTackles=[], hostPw=[];
 function hostTick(dt){
   const now0=performance.now();
   // 퀴즈 중에는 시뮬레이션 일시정지 (점수 반영은 quizAns로 계속됨)
@@ -603,32 +657,77 @@ function hostTick(dt){
     if(h.x<60){h.x=60;h.a=Math.PI-h.a;} if(h.x>W-60){h.x=W-60;h.a=Math.PI-h.a;}
     if(h.y<60){h.y=60;h.a=-h.a;} if(h.y>H-60){h.y=H-60;h.a=-h.a;}
   }
-  // 충돌 판정 (호스트 권위)
   const now=performance.now();
+  // 파워업 스폰 (한 스테이지에 최대 2개 유지)
+  G.puTimer+=dt;
+  if(G.puTimer>8 && G.powerups.length<2){
+    G.puTimer=0;
+    G.powerups.push({id:G.puSeq++, x:120+Math.random()*(W-240), y:120+Math.random()*(H-240), k:Math.random()<0.5?0:1});
+  }
+  // 자석 효과: 대상 플레이어 쪽으로 스파크가 빨려온다
+  for(const pid in G.players){
+    const p=G.players[pid];
+    if(now<p.magUntil){
+      for(const s of G.sparks){
+        const dx=p.x-s.x, dy=p.y-s.y, d2=dx*dx+dy*dy;
+        if(d2<280*280 && d2>1){
+          const d=Math.sqrt(d2);
+          s.vx+=dx/d*520*dt; s.vy+=dy/d*520*dt;
+        }
+      }
+    }
+  }
+  // 충돌 판정 (호스트 권위)
   for(const pid in G.players){
     const p=G.players[pid];
     const pr=playerRadius(p);
+    // 스파크 먹기 + 콤보
     for(let i=G.sparks.length-1;i>=0;i--){
       const s=G.sparks[i];
       const dx=p.x-s.x, dy=p.y-s.y;
       if(dx*dx+dy*dy < (pr+15)*(pr+15)){
-        const val=s.type?GOLD_VAL:SPARK_VAL;
+        p.combo = (now-p.lastEat<COMBO_WINDOW) ? (p.combo||0)+1 : 1;
+        p.lastEat=now;
+        let val=s.type?GOLD_VAL:SPARK_VAL, cb=0;
+        if(p.combo>0 && p.combo%5===0){ val+=3; cb=p.combo; }  // 5콤보마다 +3
         p.s+=val;
-        hostEvents.push([pid, s.x, s.y, val]);
+        hostEvents.push([pid, Math.round(s.x), Math.round(s.y), val, cb]);
         G.sparks.splice(i,1);
       }
     }
+    // 파워업 획득
+    for(let i=G.powerups.length-1;i>=0;i--){
+      const u=G.powerups[i];
+      const dx=p.x-u.x, dy=p.y-u.y;
+      if(dx*dx+dy*dy < (pr+22)*(pr+22)){
+        if(u.k===0) p.spdUntil=now+PU_DURATION; else p.magUntil=now+PU_DURATION;
+        hostPw.push([pid, Math.round(u.x), Math.round(u.y), u.k]);
+        G.powerups.splice(i,1);
+      }
+    }
+    // ESD 서지 피격
     if(now>p.inv){
       for(const h of G.hazards){
         const dx=p.x-h.x, dy=p.y-h.y;
         if(dx*dx+dy*dy < (pr+22)*(pr+22)){
           p.s=Math.max(0,p.s-HIT_PENALTY);
           p.inv=now+2000;
-          hostHits.push([pid, p.x, p.y]);
+          hostHits.push([pid, Math.round(p.x), Math.round(p.y)]);
           break;
         }
       }
     }
+  }
+  // 대시 태클: 대시 중인 플레이어가 상대와 부딪히면 점수 강탈 + 넉백
+  const ids=Object.keys(G.players);
+  for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
+    const A=G.players[ids[i]], B=G.players[ids[j]];
+    const dx=A.x-B.x, dy=A.y-B.y;
+    const rr=playerRadius(A)+playerRadius(B)+4;
+    if(dx*dx+dy*dy>=rr*rr) continue;
+    if(A.dash && !B.dash) hostTackle(ids[i],ids[j]);
+    else if(B.dash && !A.dash) hostTackle(ids[j],ids[i]);
+    else if(A.dash && B.dash){ applyKnock(ids[i],dx*6,dy*6); applyKnock(ids[j],-dx*6,-dy*6); }
   }
   // 30초마다 ESD 퀴즈
   G.quizElapsed+=dt;
@@ -671,6 +770,40 @@ function hostEndQuiz(){
   hideQuiz();
   hostBroadcast({t:'quizend'});
 }
+// ── 태클 / 넉백 ──
+function hostTackle(attId,vicId){
+  const att=G.players[attId], vic=G.players[vicId];
+  const now=performance.now();
+  if(!att||!vic||now<vic.tackleInv) return;
+  vic.tackleInv=now+1200;                    // 연속 태클 방지
+  const steal=Math.min(TACKLE_STEAL,vic.s);
+  vic.s-=steal; att.s+=steal;
+  hostTackles.push([attId,vicId,Math.round(vic.x),Math.round(vic.y),steal]);
+  const ang=Math.atan2(vic.y-att.y,vic.x-att.x);
+  applyKnock(vicId, Math.cos(ang)*720, Math.sin(ang)*720);
+}
+function applyKnock(pid,vx,vy){
+  if(pid===G.myId){
+    const me=G.players[G.myId];
+    if(me){ me.vx=(me.vx||0)+vx; me.vy=(me.vy||0)+vy; }
+  }else{
+    const c=G.conns.find(c=>c.peer===pid);
+    if(c&&c.open){ try{c.send({t:'knock',vx,vy});}catch(e){} }
+  }
+}
+// 상태 플래그: 대시(1) / 스피드업(2) / 자석(4)
+function fxOf(p){
+  const now=performance.now();
+  return (p.dash?1:0) | (now<(p.spdUntil||0)?2:0) | (now<(p.magUntil||0)?4:0);
+}
+// 이번 틱에 쌓인 이벤트를 로컬에서 연출로 소비 (호스트·솔로 공용)
+function consumeLocalFx(){
+  for(const e of hostEvents) fxEat(...e);
+  for(const e of hostHits) fxHit(...e);
+  for(const e of hostTackles) fxTackle(...e);
+  for(const e of hostPw) fxPower(...e);
+  hostEvents=[]; hostHits=[]; hostTackles=[]; hostPw=[];
+}
 let lastStateSend=0;
 function hostSendState(){
   const now=performance.now();
@@ -678,23 +811,17 @@ function hostSendState(){
   lastStateSend=now;
   const msg={
     t:'state', tl:Math.ceil(G.timeLeft), stg:G.stage,
-    pl:Object.entries(G.players).map(([id,p])=>[id, Math.round(p.x), Math.round(p.y), p.s, p.inv>now?1:0]),
+    pl:Object.entries(G.players).map(([id,p])=>[id, Math.round(p.x), Math.round(p.y), p.s, p.inv>now?1:0, fxOf(p)]),
     sp:G.sparks.map(s=>[s.id, Math.round(s.x), Math.round(s.y), s.type]),
     hz:G.hazards.map(h=>[Math.round(h.x), Math.round(h.y)]),
+    pu:G.powerups.map(u=>[u.id, Math.round(u.x), Math.round(u.y), u.k]),
   };
-  if(hostEvents.length){ msg.ev=hostEvents; }
-  if(hostHits.length){ msg.hit=hostHits; }
+  if(hostEvents.length) msg.ev=hostEvents;
+  if(hostHits.length) msg.hit=hostHits;
+  if(hostTackles.length) msg.tk=hostTackles;
+  if(hostPw.length) msg.pw=hostPw;
   hostBroadcast(msg);
-  // 호스트 본인 이펙트
-  for(const [pid,x,y,val] of hostEvents){
-    spawnBurst(x,y, val>=GOLD_VAL?'#fbbf24':'#38bdf8');
-    if(pid===G.myId){ val>=GOLD_VAL?sfx.gold():sfx.eat(); }
-  }
-  for(const [pid,x,y] of hostHits){
-    spawnBurst(x,y,'#f87171');
-    if(pid===G.myId){ sfx.hit(); flashRed(); }
-  }
-  hostEvents=[]; hostHits=[];
+  consumeLocalFx();                  // 호스트 본인 연출
   renderBoard(); updateTimer();
 }
 let lastPosSend=0;
@@ -703,13 +830,16 @@ function guestSendPos(){
   if(now-lastPosSend<50) return;     // 20Hz
   lastPosSend=now;
   const me=G.players[G.myId];
-  if(me) sendToHost({t:'pos', x:Math.round(me.x), y:Math.round(me.y)});
+  if(me) sendToHost({t:'pos', x:Math.round(me.x), y:Math.round(me.y), d:me.dash?1:0});
 }
 
 // ═══════════ 플레이 ═══════════
 function startPlaying(){
   G.phase='playing';
-  G.particles=[];
+  G.particles=[]; G.pops=[];
+  shakeAmt=0; dashUntil=0; dashCd=0;
+  const me=G.players[G.myId];
+  if(me){ me.vx=0; me.vy=0; me.dash=false; }
   hideQuiz();
   showScreen('game');
   resizeCanvas();
@@ -752,10 +882,27 @@ window.addEventListener('keydown', e=>{
     if(b) b.click();
     return;
   }
+  if(e.key===' '||e.key==='Shift'){ tryDash(); e.preventDefault(); return; }
   keys[e.key.toLowerCase()]=true;
-  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+  if(['arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
 });
 window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+// ── 대시 (스포츠식 부스트) ──
+let dashUntil=0, dashCd=0, lastDir={dx:1,dy:0};
+function tryDash(){
+  const now=performance.now();
+  if(G.phase!=='playing' || quizOpen || now<G.interludeUntil || now<dashCd) return;
+  dashCd=now+DASH_CD; dashUntil=now+DASH_MS;
+  const v=inputVector();
+  const d=(v.dx||v.dy)?v:lastDir;
+  const l=Math.hypot(d.dx,d.dy)||1;
+  const me=G.players[G.myId];
+  if(me){ me.vx=d.dx/l*DASH_SPEED; me.vy=d.dy/l*DASH_SPEED; }
+  sfx.dash(); shake(5);
+}
+const boostEl=$('boostBtn');
+boostEl.addEventListener('pointerdown', e=>{ e.preventDefault(); initAudio(); tryDash(); });
 
 // 가상 조이스틱
 const stick={active:false, id:null, cx:0, cy:0, dx:0, dy:0};
@@ -823,6 +970,11 @@ function spawnBurst(x,y,color){
     G.particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.5,maxLife:0.5,color});
   }
 }
+function addPop(x,y,text,color,size=18){
+  G.pops.push({x,y,text,color,size,life:0.9,maxLife:0.9});
+}
+let shakeAmt=0;
+function shake(a){ shakeAmt=Math.min(22, shakeAmt+a); }
 function flashRed(){
   const f=$('flash');
   f.style.transition='none'; f.style.opacity='1';
@@ -832,7 +984,10 @@ function flashRed(){
 function drawWorld(now, dt){
   ctx.clearRect(0,0,innerWidth,innerHeight);
   ctx.save();
-  ctx.translate(offX,offY); ctx.scale(scale,scale);
+  // 화면 흔들림
+  if(shakeAmt>0) shakeAmt=Math.max(0, shakeAmt-55*dt);
+  const shx=(Math.random()-0.5)*shakeAmt, shy=(Math.random()-0.5)*shakeAmt;
+  ctx.translate(offX+shx,offY+shy); ctx.scale(scale,scale);
 
   // 바닥
   ctx.fillStyle='#0d1124'; ctx.fillRect(0,0,W,H);
@@ -892,6 +1047,18 @@ function drawWorld(now, dt){
     ctx.shadowBlur=0;
   }
 
+  // 파워업 아이템
+  for(const u of G.powerups){
+    const bob=Math.sin(now/200+u.id*2)*5;
+    const col=u.k===0?'#34d399':'#38bdf8';
+    ctx.strokeStyle=col; ctx.lineWidth=2.5;
+    ctx.shadowColor=col; ctx.shadowBlur=18;
+    ctx.beginPath(); ctx.arc(u.x,u.y+bob,24,0,Math.PI*2); ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.font='26px sans-serif'; ctx.fillStyle='#fff';
+    ctx.fillText(u.k===0?'🚀':'🧲', u.x, u.y+bob);
+  }
+
   // ESD 서지 (해저드)
   for(const h of G.hazards){
     if(!G.isHost&&!G.solo){
@@ -922,9 +1089,24 @@ function drawWorld(now, dt){
     const r=playerRadius(p);
     const col=COLORS[p.c]||COLORS[0];
     const invul = G.isHost||G.solo ? nowMs<p.inv : !!p.inv;
+    // 상태 플래그 (호스트/솔로: 계산, 게스트: state에서 수신 + 본인 대시는 로컬)
+    let rfx = (G.isHost||G.solo) ? fxOf(p) : (p.fx||0);
+    if(pid===G.myId && nowMs<dashUntil) rfx|=1;
+    // 대시·스피드 트레일
+    if((rfx&1) || (rfx&2) || (pid===G.myId && Math.hypot(p.vx||0,p.vy||0)>380)){
+      G.particles.push({x:p.x+(Math.random()-0.5)*r, y:p.y+(Math.random()-0.5)*r,
+        vx:0, vy:0, life:0.3, maxLife:0.3, color:col});
+    }
+    // 자석 링
+    if(rfx&4){
+      ctx.strokeStyle='rgba(56,189,248,.55)'; ctx.lineWidth=2;
+      ctx.setLineDash([8,8]); ctx.lineDashOffset=-nowMs/30;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r+52,0,Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]); ctx.lineDashOffset=0;
+    }
     ctx.globalAlpha = invul ? (Math.sin(nowMs/70)>0?0.35:0.85) : 1;
-    // 글로우 + 몸통
-    ctx.shadowColor=col; ctx.shadowBlur=20;
+    // 글로우 + 몸통 (대시·스피드 중엔 더 강한 글로우)
+    ctx.shadowColor=col; ctx.shadowBlur=(rfx&3)?34:20;
     ctx.fillStyle=col;
     ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur=0;
@@ -960,6 +1142,21 @@ function drawWorld(now, dt){
     ctx.fillRect(pt.x-3,pt.y-3,6,6);
   }
   ctx.globalAlpha=1;
+
+  // 점수 팝업
+  for(let i=G.pops.length-1;i>=0;i--){
+    const p=G.pops[i];
+    p.life-=dt;
+    if(p.life<=0){ G.pops.splice(i,1); continue; }
+    p.y-=48*dt;
+    ctx.globalAlpha=Math.min(1,p.life/p.maxLife*1.6);
+    ctx.font=`900 ${p.size}px "Segoe UI","Malgun Gothic",sans-serif`;
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(11,14,26,.8)';
+    ctx.strokeText(p.text,p.x,p.y);
+    ctx.fillStyle=p.color;
+    ctx.fillText(p.text,p.x,p.y);
+  }
+  ctx.globalAlpha=1;
   ctx.restore();
 }
 function roundRect(x,y,w,h,r){
@@ -971,11 +1168,17 @@ function roundRect(x,y,w,h,r){
 }
 
 // ── HUD ──
+let lastTickBeep=-1;
 function updateTimer(){
   const t=Math.max(0,Math.ceil(G.timeLeft));
   const el=$('timer');
   el.textContent=t;
   el.classList.toggle('low', t<=10);
+  // 마지막 10초 카운트다운 비프
+  if(G.phase==='playing' && t<=10 && t>0 && t!==lastTickBeep){
+    lastTickBeep=t;
+    beep(t<=3?1046:740, 0.06, 'square', 0.05);
+  }
 }
 function renderBoard(){
   const el=$('board');
@@ -1066,15 +1269,35 @@ function loop(now){
   const dt=Math.min(0.05,(now-lastT)/1000);
   lastT=now;
   if(G.phase==='playing'){
+    const nowMs=performance.now();
     // 퀴즈·스테이지 배너 동안에는 이동 정지
-    const frozen = quizOpen || performance.now()<G.interludeUntil;
-    // 내 이동 (로컬 반응성)
+    const frozen = quizOpen || nowMs<G.interludeUntil;
+    // 내 이동 (관성 물리 — 스포츠식 가속/감속 + 벽 반동)
     const me=G.players[G.myId];
     if(me && !frozen){
       const v=inputVector();
-      me.x=Math.max(24,Math.min(W-24, me.x+v.dx*PLAYER_SPEED*dt));
-      me.y=Math.max(24,Math.min(H-24, me.y+v.dy*PLAYER_SPEED*dt));
-    }
+      if(v.dx||v.dy) lastDir={dx:v.dx,dy:v.dy};
+      me.vx=(me.vx||0)+v.dx*ACC*dt;
+      me.vy=(me.vy||0)+v.dy*ACC*dt;
+      const fr=Math.max(0,1-FRICTION*dt);
+      me.vx*=fr; me.vy*=fr;
+      me.dash = nowMs<dashUntil;
+      // 최고 속도: 대시 > 스피드업 > 기본
+      const myFx = (G.isHost||G.solo) ? fxOf(me) : (me.fx||0);
+      const maxSp = me.dash ? DASH_SPEED : PLAYER_SPEED*((myFx&2)?1.5:1);
+      const spd=Math.hypot(me.vx,me.vy);
+      if(spd>maxSp){ me.vx*=maxSp/spd; me.vy*=maxSp/spd; }
+      let nx=me.x+me.vx*dt, ny=me.y+me.vy*dt;
+      if(nx<24){ nx=24; me.vx=Math.abs(me.vx)*0.5; }
+      else if(nx>W-24){ nx=W-24; me.vx=-Math.abs(me.vx)*0.5; }
+      if(ny<24){ ny=24; me.vy=Math.abs(me.vy)*0.5; }
+      else if(ny>H-24){ ny=H-24; me.vy=-Math.abs(me.vy)*0.5; }
+      me.x=nx; me.y=ny;
+    }else if(me){ me.dash=false; }
+    // 대시 버튼 쿨다운 표시
+    const cd=Math.max(0,Math.min(1,1-(dashCd-nowMs)/DASH_CD));
+    boostEl.style.setProperty('--cd', cd.toFixed(2));
+    boostEl.classList.toggle('rdy', cd>=1);
     if(G.isHost||G.solo){
       hostTick(dt);
       if(!G.solo) hostSendState();
@@ -1096,14 +1319,7 @@ function startSolo(){
 }
 // 솔로에서도 hostTick의 이벤트 큐를 소비해야 함
 setInterval(()=>{
-  if(G.solo&&G.phase==='playing'){
-    for(const [pid,x,y,val] of hostEvents){
-      spawnBurst(x,y, val>=GOLD_VAL?'#fbbf24':'#38bdf8');
-      val>=GOLD_VAL?sfx.gold():sfx.eat();
-    }
-    for(const [pid,x,y] of hostHits){ spawnBurst(x,y,'#f87171'); sfx.hit(); flashRed(); }
-    hostEvents=[]; hostHits=[];
-  }
+  if(G.solo&&G.phase==='playing'){ consumeLocalFx(); renderBoard(); updateTimer(); }
 },60);
 
 // ═══════════ 버튼 바인딩 ═══════════
