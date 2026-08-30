@@ -903,18 +903,16 @@ function onGameEnd(rank, stage){
 // ── Firebase 글로벌 랭킹 (설정값이 있으면 전 세계 공용, 없으면 이 기기 기록만) ──
 // Firebase 콘솔 > 프로젝트 설정 > 웹 앱의 firebaseConfig 객체를 아래에 붙여넣으세요.
 // Realtime Database를 만들어야 하며 databaseURL이 반드시 포함되어야 합니다. (README 참고)
-const FIREBASE_CONFIG = null;
-/* 예시:
 const FIREBASE_CONFIG = {
-  apiKey: "AIza...",
+  apiKey: "AIzaSyDCbE-ro9u7Nl2RtiQXgk3Kiz5l92h3qpk",
   authDomain: "esd-hunter.firebaseapp.com",
-  databaseURL: "https://esd-hunter-default-rtdb.asia-southeast1.firebasedatabase.app",
+  databaseURL: "https://esd-hunter-default-rtdb.firebaseio.com",
   projectId: "esd-hunter",
-  storageBucket: "esd-hunter.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  storageBucket: "esd-hunter.firebasestorage.app",
+  messagingSenderId: "264503214520",
+  appId: "1:264503214520:web:3324159fff92165960cf4d",
+  measurementId: "G-G8WB0NE3FB"
 };
-*/
 let fdb=null, globalHof=[];
 try{
   if(FIREBASE_CONFIG && typeof firebase!=='undefined'){
