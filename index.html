@@ -23,9 +23,12 @@ body::before{content:'';position:fixed;inset:0;background:
   radial-gradient(600px 300px at 15% 0%,rgba(124,108,240,.18),transparent),
   radial-gradient(700px 350px at 85% 10%,rgba(56,189,248,.12),transparent);pointer-events:none}
 
-.screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
-  padding:20px;gap:14px;z-index:10;overflow-y:auto}
+.screen{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:flex-start;
+  padding:28px 20px;gap:14px;z-index:10;overflow-y:auto}
 .screen.show{display:flex}
+/* 콘텐츠가 짧으면 세로 가운데, 길면 위에서부터 정상 스크롤 (제목 잘림 방지) */
+.screen>:first-child{margin-top:auto}
+.screen>:last-child{margin-bottom:auto}
 
 h1.title{font-size:clamp(28px,6vw,44px);font-weight:900;text-align:center;line-height:1.25}
 h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
