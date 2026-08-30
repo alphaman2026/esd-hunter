@@ -84,6 +84,35 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
   z-index:99;opacity:0;transition:.3s;pointer-events:none;max-width:90vw;text-align:center}
 #toast.show{opacity:1}
 #flash{position:fixed;inset:0;background:rgba(248,113,113,.35);opacity:0;pointer-events:none;z-index:8;transition:opacity .5s}
+#stageLbl{font-size:15px;font-weight:900;color:var(--warn);background:rgba(11,14,26,.7);
+  border:1px solid var(--line);border-radius:12px;padding:9px 14px;backdrop-filter:blur(6px)}
+
+/* ── 퀴즈 ── */
+#quizOv{position:fixed;inset:0;background:rgba(11,14,26,.82);backdrop-filter:blur(6px);z-index:15;
+  display:none;align-items:center;justify-content:center;padding:20px}
+#quizOv.show{display:flex}
+.quizbox{background:var(--card);border:1px solid var(--accent);border-radius:18px;padding:22px;width:100%;
+  max-width:460px;display:flex;flex-direction:column;gap:10px;box-shadow:0 0 40px rgba(124,108,240,.35)}
+.quizbox .qtag{font-size:12px;font-weight:800;color:var(--warn)}
+.quizbox .qtext{font-size:17px;font-weight:800;line-height:1.5}
+.qbar{height:6px;background:var(--bg2);border-radius:3px;overflow:hidden}
+.qbar i{display:block;height:100%;background:var(--grad);width:100%}
+.qbtn{background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--txt);
+  font-size:15px;font-weight:700;padding:12px 14px;cursor:pointer;text-align:left;font-family:inherit;transition:.12s}
+.qbtn:hover{border-color:var(--accent)}
+.qbtn.ok{background:rgba(52,211,153,.22);border-color:var(--ok)}
+.qbtn.no{background:rgba(248,113,113,.22);border-color:var(--bad)}
+.qbtn:disabled{cursor:default;opacity:.9}
+.qresult{text-align:center;font-size:14px;font-weight:800;min-height:20px}
+
+/* ── 스테이지 배너 ── */
+#stageBanner{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:12;pointer-events:none}
+#stageBanner.show{display:flex}
+#stageBanner .inner{text-align:center;animation:stagein 2.4s ease forwards}
+#stageBanner .stg{font-size:clamp(44px,11vw,80px);font-weight:900;background:var(--grad);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+#stageBanner .sub{font-size:clamp(13px,3.5vw,17px);color:var(--txt);font-weight:800;margin-top:6px}
+@keyframes stagein{0%{opacity:0;transform:scale(.5)}15%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0}}
 
 /* ── result ── */
 #resultScreen{background:rgba(11,14,26,.88);backdrop-filter:blur(8px);z-index:20}
@@ -122,7 +151,8 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
   <div class="howto">
     <b>🎮 조작법</b> — PC: 방향키/WASD · 모바일: 화면 터치 후 드래그<br>
     <b>⚡ 정전기</b> +1점 · <b>🌟 대전 보너스</b> +5점 · <b>🔴 ESD 서지</b>에 닿으면 −3점!<br>
-    <b>⏱️ 90초</b> 동안 가장 많은 정전기를 제거한 엔지니어가 승리
+    <b>👾 스테이지</b> — 45초 안에 웨이브를 모두 제거하면 다음 단계! 갈수록 어려워져요<br>
+    <b>📝 30초마다</b> ESD 상식 퀴즈 — 맞히면 +5점 보너스
   </div>
 </div>
 
@@ -143,16 +173,33 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
 <div class="screen" id="gameScreen">
   <canvas id="cv"></canvas>
   <div id="hud">
-    <div id="timer">90</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div id="timer">45</div>
+      <div id="stageLbl">STAGE 1</div>
+    </div>
     <div id="board"></div>
   </div>
   <div id="stick"><div class="knob"></div></div>
   <div id="flash"></div>
 </div>
 
+<!-- ══════════ 퀴즈 오버레이 ══════════ -->
+<div id="quizOv">
+  <div class="quizbox">
+    <div class="qtag">📝 ESD 상식 퀴즈 — 맞히면 +5점 보너스!</div>
+    <div class="qtext" id="quizQ"></div>
+    <div class="qbar"><i id="quizBar"></i></div>
+    <div id="quizBtns" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="qresult" id="quizRes"></div>
+  </div>
+</div>
+
+<!-- ══════════ 스테이지 배너 ══════════ -->
+<div id="stageBanner"><div class="inner"><div class="stg" id="stageBig"></div><div class="sub" id="stageSub"></div></div></div>
+
 <!-- ══════════ 결과 ══════════ -->
 <div class="screen" id="resultScreen">
-  <h1 class="title">🏆 <span class="g">라인 정상화!</span></h1>
+  <h1 class="title">🏆 <span class="g">게임 오버</span></h1>
   <p class="subtitle" id="resultMsg"></p>
   <div class="rank" id="rankList"></div>
   <div class="panel" style="max-width:400px">
@@ -174,7 +221,11 @@ h1.title .g{background:var(--grad);-webkit-background-clip:text;background-clip:
 // ── 상수 ──
 const W = 1600, H = 1000;              // 월드 크기
 const MAXP = 7;                        // 최대 인원
-const GAME_SECONDS = 90;
+const STAGE_SECONDS = 45;              // 스테이지 제한 시간
+const QUIZ_INTERVAL = 30;              // 퀴즈 주기 (플레이 시간 기준, 초)
+const QUIZ_SECONDS = 10;               // 퀴즈 답변 제한 시간
+const QUIZ_BONUS = 5;                  // 퀴즈 정답 보너스
+const STAGE_BONUS = 5;                 // 스테이지 클리어 보너스 (전원)
 const PLAYER_SPEED = 270;
 const SPARK_VAL = 1, GOLD_VAL = 5, HIT_PENALTY = 3;
 const PEER_PREFIX = 'waferbay-esd-';
@@ -189,6 +240,34 @@ const STATIONS = [
   {x:280, y:620, e:'⚙️', n:'백그라인딩'},{x:800, y:590, e:'🔪', n:'다이싱'},
   {x:1320,y:620, e:'📌', n:'다이본딩'},  {x:280, y:830, e:'🧵', n:'와이어본딩'},
   {x:800, y:860, e:'🛡️', n:'몰딩'},     {x:1320,y:830, e:'✅', n:'패키지 테스트'},
+];
+
+// ── ESD 기초 상식 퀴즈 은행 ──
+const QUIZBANK = [
+ {q:'ESD는 무엇의 약자일까요?', a:['Electro-Static Discharge (정전기 방전)','Electric System Down','Extra Safety Device','Energy Storage Drive'], c:0},
+ {q:'정전기가 가장 잘 발생하는 환경은?', a:['습도가 높은 환경','습도가 낮고 건조한 환경','온도가 높은 환경','바람이 많이 부는 환경'], c:1},
+ {q:'두 물체를 마찰시킬 때 정전기가 생기는 현상은?', a:['유도대전','마찰대전','박리대전','분출대전'], c:1},
+ {q:'작업자가 손목에 착용하는 ESD 방지 장비는?', a:['손목 시계','접지 스트랩 (Wrist Strap)','토시','보호 장갑'], c:1},
+ {q:'공기를 이온화시켜 정전기를 중화하는 장비는?', a:['이오나이저 (Ionizer)','컴프레서','칠러','스크러버'], c:0},
+ {q:'클린룸에서 정전기 예방에 적절한 상대습도는?', a:['10% 이하','40~60%','90% 이상','0%'], c:1},
+ {q:'HBM은 어떤 ESD 모델일까요?', a:['기계 대전 모델','인체 대전 모델 (Human Body Model)','장비 대전 모델','습도 측정 모델'], c:1},
+ {q:'CDM(Charged Device Model)에서 대전되는 것은?', a:['사람','작업 장비','소자(디바이스) 자신','클린룸 바닥'], c:2},
+ {q:'반도체 소자가 ESD에 취약한 가장 큰 이유는?', a:['크기가 커서','회로가 미세하고 산화막이 얇아서','금속 배선이 많아서','전기를 사용하지 않아서'], c:1},
+ {q:'접지(Grounding)의 목적은?', a:['전하를 대지로 안전하게 흘려보내기','장비를 단단히 고정하기','소음 줄이기','온도 유지하기'], c:0},
+ {q:'정전기가 축적되기 가장 쉬운 재질은?', a:['구리','알루미늄','플라스틱 (부도체)','철'], c:2},
+ {q:'사람이 정전기를 "찌릿"하고 느끼는 최소 전압은 약?', a:['3V','30V','300V','3,000V (3kV)'], c:3},
+ {q:'손목 스트랩에 1MΩ 저항을 직렬로 넣는 이유는?', a:['멋있어 보이려고','감전 사고 방지','전기 절약','정전기 증폭'], c:1},
+ {q:'ESD 손상 중 당장은 멀쩡해 보이다가 나중에 고장을 일으키는 것은?', a:['즉시 파괴','잠재 불량 (Latent Defect)','단순 단선','과열 손상'], c:1},
+ {q:'클린룸에서 신는 정전기 방지 신발은?', a:['운동화','슬리퍼','정전화 (ESD Shoes)','장화'], c:2},
+ {q:'이오나이저가 만들어내는 것은?', a:['오존만','양이온과 음이온','전자빔','자외선'], c:1},
+ {q:'정전기가 웨이퍼 표면으로 끌어당기는 골칫거리는?', a:['파티클 (먼지)','수분','질소 가스','포토레지스트'], c:0},
+ {q:'ESD 민감 부품을 담는 포장재로 알맞은 것은?', a:['일반 비닐봉투','종이봉투','대전방지 (Anti-static) 백','신문지'], c:2},
+ {q:'도체와 부도체 중 정전기 전하가 잘 빠져나가지 못하는 쪽은?', a:['도체','부도체','둘 다 잘 빠진다','둘 다 안 빠진다'], c:1},
+ {q:'ESD로 게이트 산화막이 뚫리는 손상을 뭐라고 할까요?', a:['산화막 파괴 (Oxide Breakdown)','증착 불량','식각 과다','도핑 오류'], c:0},
+ {q:'겨울철에 정전기가 심해지는 이유는?', a:['기온이 낮아서','공기가 건조해서','해가 짧아서','바람이 강해서'], c:1},
+ {q:'대전방지제(Anti-static agent)의 역할은?', a:['표면 저항을 낮춰 전하 축적 방지','접착력 증가','광택 부여','냄새 제거'], c:0},
+ {q:'붙어 있던 두 물체를 떼어낼 때 생기는 대전은?', a:['마찰대전','박리대전','유도대전','충돌대전'], c:1},
+ {q:'ESD 안전 작업대 매트의 특징은?', a:['완전 절연체','적당한 저항으로 전하를 서서히 방전','전하를 계속 축적','금속으로 스파크 유도'], c:1},
 ];
 
 // ── DOM ──
@@ -232,7 +311,12 @@ const G = {
   sparks:[],             // {id,x,y,vx,vy,type} type 0=일반 1=골드
   hazards:[],            // {x,y,a(방향)}
   particles:[],          // 이펙트
-  timeLeft:GAME_SECONDS,
+  timeLeft:STAGE_SECONDS,
+  stage:1,
+  interludeUntil:0,      // 스테이지 배너 동안 일시정지
+  quiz:null,             // 호스트: {qi, until, grace}
+  quizElapsed:0,         // 다음 퀴즈까지 누적 플레이 시간
+  usedQuiz:[],
   sparkSeq:0,
   peer:null, conns:[], hostConn:null,
 };
@@ -306,7 +390,13 @@ function hostOnData(conn,d){
     const p=G.players[conn.peer];
     if(p){ p.x=Math.max(0,Math.min(W,+d.x||0)); p.y=Math.max(0,Math.min(H,+d.y||0)); }
   }
+  else if(d.t==='quizAns'){
+    // 퀴즈 정답 보너스 (마감 직후 도착도 약간의 유예 허용)
+    const p=G.players[conn.peer];
+    if(p && (G.quiz || performance.now()<quizGraceUntil)) p.s+=QUIZ_BONUS;
+  }
 }
+let quizGraceUntil=0;
 // 대기실 인원 목록을 모두에게 전파
 function syncLobby(){
   const list=Object.entries(G.players).map(([id,p])=>({id, n:p.n, c:p.c}));
@@ -362,16 +452,25 @@ function guestOnData(d){
     case 'start':{
       const me=G.players[G.myId];
       if(me){ me.x=d.sx; me.y=d.sy; }
+      G.stage=1;
       startPlaying();
       break;
     }
+    case 'stage':
+      G.stage=d.n;
+      G.interludeUntil=performance.now()+2200;
+      showStageBanner(d.n);
+      break;
+    case 'quiz': showQuiz(d.qi); break;
+    case 'quizend': hideQuiz(); break;
     case 'state': applyState(d); break;
-    case 'end': onGameEnd(d.rank); break;
+    case 'end': onGameEnd(d.rank, d.stage); break;
   }
 }
 // 호스트가 보내는 월드 상태 반영 (게스트)
 function applyState(d){
   G.timeLeft=d.tl;
+  if(d.stg && d.stg!==G.stage){ G.stage=d.stg; updateStageLbl(); }
   // 스파크: id 기준 갱신
   const seen=new Set();
   const byId={}; G.sparks.forEach(s=>byId[s.id]=s);
@@ -445,45 +544,62 @@ function hostStartGame(){
     p.x=W/2+Math.cos(ang)*220; p.y=H/2+Math.sin(ang)*160; p.s=0; p.inv=0;
     p.tx=p.x; p.ty=p.y;
   });
-  G.sparks=[]; G.sparkSeq=0;
-  const nHaz=ids.length>4?3:2;
-  G.hazards=[];
-  for(let i=0;i<nHaz;i++) G.hazards.push({x:150+Math.random()*(W-300), y:150+Math.random()*(H-300), a:Math.random()*Math.PI*2});
-  G.timeLeft=GAME_SECONDS;
-  for(let i=0;i<14;i++) hostSpawnSpark();
-  // 게스트에게 각자 시작 위치와 함께 시작 통보
+  G.stage=1; G.sparkSeq=0; G.quiz=null; G.quizElapsed=0; G.usedQuiz=[];
+  // 게스트에게 각자 시작 위치와 함께 시작 통보 (스테이지 배너보다 먼저)
   for(const c of G.conns){
     const p=G.players[c.peer];
     if(p&&c.open){ try{c.send({t:'start', sx:p.x, sy:p.y});}catch(e){} }
   }
+  hostSetupStage();
   startPlaying();
+}
+// 스테이지 준비: 웨이브 스폰 + 난이도 상승 (갤러그식 단계)
+function hostSetupStage(){
+  const n=Object.keys(G.players).length;
+  G.sparks=[];
+  const wave=Math.min(70, 16+7*(G.stage-1)+4*(n-1));
+  for(let i=0;i<wave;i++) hostSpawnSpark();
+  const nHaz=Math.min(5, (n>4?2:1)+Math.ceil(G.stage/2));
+  G.hazards=[];
+  for(let i=0;i<nHaz;i++) G.hazards.push({x:150+Math.random()*(W-300), y:150+Math.random()*(H-300), a:Math.random()*Math.PI*2});
+  G.timeLeft=STAGE_SECONDS;
+  G.interludeUntil=performance.now()+2200;   // 배너 표시 동안 정지
+  hostBroadcast({t:'stage', n:G.stage});
+  showStageBanner(G.stage);
 }
 function hostSpawnSpark(){
   const st=STATIONS[Math.floor(Math.random()*STATIONS.length)];
   const ang=Math.random()*Math.PI*2, dist=40+Math.random()*110;
+  const spd=1+0.15*(G.stage-1);              // 단계마다 스파크가 빨라짐
   G.sparks.push({
     id:G.sparkSeq++,
     x:Math.max(30,Math.min(W-30, st.x+Math.cos(ang)*dist)),
     y:Math.max(30,Math.min(H-30, st.y+Math.sin(ang)*dist)),
-    vx:(Math.random()-0.5)*60, vy:(Math.random()-0.5)*60,
+    vx:(Math.random()-0.5)*60*spd, vy:(Math.random()-0.5)*60*spd,
     type:Math.random()<0.08?1:0,
   });
 }
 let hostEvents=[], hostHits=[];
 function hostTick(dt){
-  const nPlayers=Object.keys(G.players).length;
-  // 스파크 이동 + 보충
-  const want=Math.min(34, 13+nPlayers*3);
+  const now0=performance.now();
+  // 퀴즈 중에는 시뮬레이션 일시정지 (점수 반영은 quizAns로 계속됨)
+  if(G.quiz){
+    if(now0>=G.quiz.until) hostEndQuiz();
+    return;
+  }
+  // 스테이지 배너 동안 정지
+  if(now0<G.interludeUntil) return;
+  // 스파크 이동 (웨이브 방식 — 보충 스폰 없음, 다 잡으면 다음 스테이지)
   for(const s of G.sparks){
     s.x+=s.vx*dt; s.y+=s.vy*dt;
     if(s.x<20||s.x>W-20) s.vx*=-1;
     if(s.y<20||s.y>H-20) s.vy*=-1;
   }
-  if(G.sparks.length<want && Math.random()<dt*4) hostSpawnSpark();
-  // 해저드 이동
+  // 해저드 이동 (단계마다 빨라짐)
+  const hspd=Math.min(230, 100+18*(G.stage-1));
   for(const h of G.hazards){
     h.a+=(Math.random()-0.5)*dt*3;
-    h.x+=Math.cos(h.a)*100*dt; h.y+=Math.sin(h.a)*100*dt;
+    h.x+=Math.cos(h.a)*hspd*dt; h.y+=Math.sin(h.a)*hspd*dt;
     if(h.x<60){h.x=60;h.a=Math.PI-h.a;} if(h.x>W-60){h.x=W-60;h.a=Math.PI-h.a;}
     if(h.y<60){h.y=60;h.a=-h.a;} if(h.y>H-60){h.y=H-60;h.a=-h.a;}
   }
@@ -514,16 +630,46 @@ function hostTick(dt){
       }
     }
   }
-  // 타이머
+  // 30초마다 ESD 퀴즈
+  G.quizElapsed+=dt;
+  if(G.quizElapsed>=QUIZ_INTERVAL){
+    G.quizElapsed=0;
+    hostStartQuiz();
+    return;
+  }
+  // 스테이지 클리어: 웨이브 전멸 → 전원 보너스 + 다음 단계
+  if(G.sparks.length===0){
+    for(const pid in G.players) G.players[pid].s+=STAGE_BONUS;
+    G.stage++;
+    hostSetupStage();
+    return;
+  }
+  // 타이머: 제한 시간 안에 웨이브를 못 지우면 게임 오버
   G.timeLeft-=dt;
   if(G.timeLeft<=0){
     G.timeLeft=0;
     const rank=Object.entries(G.players)
       .map(([id,p])=>({id, n:p.n, c:p.c, s:p.s}))
       .sort((a,b)=>b.s-a.s);
-    hostBroadcast({t:'end', rank});
-    onGameEnd(rank);
+    hostBroadcast({t:'end', rank, stage:G.stage});
+    onGameEnd(rank, G.stage);
   }
+}
+// ── 퀴즈 (호스트 주관) ──
+function hostStartQuiz(){
+  if(G.usedQuiz.length>=QUIZBANK.length) G.usedQuiz=[];
+  let qi;
+  do{ qi=Math.floor(Math.random()*QUIZBANK.length); }while(G.usedQuiz.includes(qi));
+  G.usedQuiz.push(qi);
+  G.quiz={qi, until:performance.now()+QUIZ_SECONDS*1000};
+  quizGraceUntil=G.quiz.until+1500;
+  hostBroadcast({t:'quiz', qi});
+  showQuiz(qi);
+}
+function hostEndQuiz(){
+  G.quiz=null;
+  hideQuiz();
+  hostBroadcast({t:'quizend'});
 }
 let lastStateSend=0;
 function hostSendState(){
@@ -531,7 +677,7 @@ function hostSendState(){
   if(now-lastStateSend<66) return;   // ~15Hz
   lastStateSend=now;
   const msg={
-    t:'state', tl:Math.ceil(G.timeLeft),
+    t:'state', tl:Math.ceil(G.timeLeft), stg:G.stage,
     pl:Object.entries(G.players).map(([id,p])=>[id, Math.round(p.x), Math.round(p.y), p.s, p.inv>now?1:0]),
     sp:G.sparks.map(s=>[s.id, Math.round(s.x), Math.round(s.y), s.type]),
     hz:G.hazards.map(h=>[Math.round(h.x), Math.round(h.y)]),
@@ -564,24 +710,26 @@ function guestSendPos(){
 function startPlaying(){
   G.phase='playing';
   G.particles=[];
+  hideQuiz();
   showScreen('game');
   resizeCanvas();
   sfx.start();
-  toast('⚡ 정전기를 잡아라!', 1800);
-  updateTimer();
+  updateTimer(); updateStageLbl();
 }
 function playerRadius(p){ return 22+Math.min(60,p.s)*0.18; }
 
-function onGameEnd(rank){
+function onGameEnd(rank, stage){
   G.phase='ended';
   sfx.end();
+  hideQuiz();
   showScreen('result');
   const winner=rank[0];
   const tie=rank.length>1 && rank[1].s===winner.s;
-  $('resultMsg').textContent = rank.length===1
-    ? `정전기 ${winner.s}개 제거! 수율 방어 성공 🎉`
+  const head=`STAGE ${stage||G.stage}까지 진출! `;
+  $('resultMsg').textContent = head + (rank.length===1
+    ? `정전기 ${winner.s}점 획득 🎉`
     : tie ? '공동 우승! 클린룸의 평화가 찾아왔다'
-    : `${winner.n} 님이 라인을 지켜냈습니다!`;
+    : `${winner.n} 님이 라인을 지켜냈습니다!`);
   const el=$('rankList'); el.innerHTML='';
   const medals=['🥇','🥈','🥉'];
   rank.forEach((r,i)=>{
@@ -599,6 +747,11 @@ function onGameEnd(rank){
 // ═══════════ 입력 ═══════════
 const keys={};
 window.addEventListener('keydown', e=>{
+  if(quizOpen && ['1','2','3','4'].includes(e.key)){
+    const b=$('quizBtns').children[+e.key-1];
+    if(b) b.click();
+    return;
+  }
   keys[e.key.toLowerCase()]=true;
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
 });
@@ -840,15 +993,84 @@ function renderBoard(){
   });
 }
 
+// ═══════════ 퀴즈 UI ═══════════
+let quizOpen=false, quizAnswered=false;
+function showQuiz(qi){
+  const q=QUIZBANK[qi];
+  if(!q) return;
+  quizOpen=true; quizAnswered=false;
+  $('quizQ').textContent=q.q;
+  $('quizRes').textContent='';
+  const box=$('quizBtns'); box.innerHTML='';
+  q.a.forEach((txt,i)=>{
+    const b=document.createElement('button');
+    b.className='qbtn'; b.type='button';
+    b.textContent=(i+1)+'. '+txt;
+    b.onclick=()=>answerQuiz(qi,i,b);
+    box.appendChild(b);
+  });
+  $('quizOv').classList.add('show');
+  // 남은 시간 바
+  const bar=$('quizBar');
+  bar.style.transition='none'; bar.style.width='100%';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    bar.style.transition=`width ${QUIZ_SECONDS}s linear`; bar.style.width='0%';
+  }));
+  beep(660,0.12,'triangle',0.09);
+}
+function answerQuiz(qi,i,btn){
+  if(quizAnswered) return;
+  quizAnswered=true;
+  const q=QUIZBANK[qi];
+  const ok=(i===q.c);
+  document.querySelectorAll('#quizBtns .qbtn').forEach((b,bi)=>{
+    b.disabled=true;
+    if(bi===q.c) b.classList.add('ok');
+  });
+  if(!ok) btn.classList.add('no');
+  $('quizRes').textContent = ok ? `정답! +${QUIZ_BONUS}점 🎉` : '아쉬워요! 정답: '+q.a[q.c];
+  if(ok){
+    sfx.gold();
+    if(G.isHost||G.solo){ const me=G.players[G.myId]; if(me) me.s+=QUIZ_BONUS; renderBoard(); }
+    else sendToHost({t:'quizAns'});
+  }else{
+    beep(180,0.2,'sawtooth',0.08);
+  }
+  // 솔로는 답하면 잠시 후 바로 재개
+  if(G.solo) setTimeout(()=>{ if(G.quiz) hostEndQuiz(); }, 1500);
+}
+function hideQuiz(){
+  quizOpen=false;
+  $('quizOv').classList.remove('show');
+}
+
+// ═══════════ 스테이지 배너 ═══════════
+function showStageBanner(n){
+  $('stageBig').textContent='STAGE '+n;
+  $('stageSub').textContent = n===1
+    ? '정전기 웨이브를 45초 안에 모두 제거하라!'
+    : `웨이브 클리어! 전원 +${STAGE_BONUS}점 · 난이도 상승 ⚠️`;
+  const b=$('stageBanner');
+  b.classList.remove('show'); void b.offsetWidth;
+  b.classList.add('show');
+  clearTimeout(showStageBanner._t);
+  showStageBanner._t=setTimeout(()=>b.classList.remove('show'), 2400);
+  updateStageLbl();
+  sfx.start();
+}
+function updateStageLbl(){ $('stageLbl').textContent='STAGE '+(G.stage||1); }
+
 // ═══════════ 메인 루프 ═══════════
 let lastT=performance.now();
 function loop(now){
   const dt=Math.min(0.05,(now-lastT)/1000);
   lastT=now;
   if(G.phase==='playing'){
+    // 퀴즈·스테이지 배너 동안에는 이동 정지
+    const frozen = quizOpen || performance.now()<G.interludeUntil;
     // 내 이동 (로컬 반응성)
     const me=G.players[G.myId];
-    if(me){
+    if(me && !frozen){
       const v=inputVector();
       me.x=Math.max(24,Math.min(W-24, me.x+v.dx*PLAYER_SPEED*dt));
       me.y=Math.max(24,Math.min(H-24, me.y+v.dy*PLAYER_SPEED*dt));
