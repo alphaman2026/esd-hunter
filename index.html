@@ -922,9 +922,10 @@ try{
     firebase.initializeApp(FIREBASE_CONFIG);
     fdb=firebase.database();
     // 상위 기록 실시간 구독
-    fdb.ref('hof').orderByChild('s').limitToLast(10).on('value', snap=>{
+    // limitToLast 를 넉넉히 잡고 클라이언트에서 거른다 — 같은 DB를 다른 게임(g 태그, 예: ESD 십자말풀이)과 공유하기 때문
+    fdb.ref('hof').orderByChild('s').limitToLast(100).on('value', snap=>{
       const arr=[];
-      snap.forEach(ch=>{ const v=ch.val(); if(v&&typeof v.n==='string') arr.push(v); });
+      snap.forEach(ch=>{ const v=ch.val(); if(v&&typeof v.n==='string'&&!v.g) arr.push(v); });
       globalHof=arr.sort((a,b)=>(b.s-a.s)||(b.st-a.st)||(a.d-b.d));
       renderHof();
     }, ()=>{ /* 권한/네트워크 오류 시 로컬 기록으로 표시 */ fdb=null; renderHof(); });
